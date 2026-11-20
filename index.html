@@ -499,6 +499,7 @@ const qt = q => (S.lang === 'es' && q.es)
 function syncLangBtn() { const b = $('#langBtn'); if (b) b.textContent = S.lang === 'es' ? 'English' : 'Español'; }
 function setLang(l) { S.lang = l; try { localStorage.setItem('gc_lang', l); } catch (e) {} syncLangBtn(); if (S.inExam) { buildNav(); renderQ(); } }
 $('#langBtn').onclick = () => setLang(S.lang === 'es' ? 'en' : 'es');
+$('#finishBtn').onclick = () => finish(false);   // header Finish button (asks for confirmation and lists unanswered questions)
 syncLangBtn();
 
 /* built-in calculator: candidates can calculate without leaving the page (leaving it is logged as an incident) */
