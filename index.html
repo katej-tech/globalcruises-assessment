@@ -170,6 +170,7 @@ table.list th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color
   <header class="bar">
     <span class="title">⚓ Analyst assessment</span>
     <span class="grow muted" id="barSec" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="btn sm" id="langBtn" title="Cambiar el idioma de las preguntas / Switch the language of the questions">Español</button>
     <span class="savest" id="saveSt"></span>
     <span class="timer" id="timer" role="timer" aria-label="Time remaining">--:--</span>
     <button class="btn primary" id="finishBtn">Finish</button>
@@ -238,7 +239,8 @@ const store = { get(k) { try { return sessionStorage.getItem(k); } catch (e) { r
 
 const S = { token: null, role: null, name: '', username: '', cameraRequired: true,
   q: [], i: 0, ans: {}, seed: '', deadline: 0, skew: 0, timer: null, dirty: new Set(), saveChain: Promise.resolve(), saveTimer: null,
-  submitted: false, finishing: false, inExam: false, cam: null, camOk: false, camErr: '', lastBlur: 0 };
+  submitted: false, finishing: false, inExam: false, cam: null, camOk: false, camErr: '', lastBlur: 0,
+  lang: (() => { try { return localStorage.getItem('gc_lang') === 'es' ? 'es' : 'en'; } catch (e) { return 'en'; } })() };
 
 /* ------------------------------ helpers ------------------------------ */
 function show(id) { $$('.view').forEach(v => v.classList.toggle('hidden', v.id !== id)); window.scrollTo(0, 0); }
@@ -472,6 +474,14 @@ async function loadHome() {
 
 /* ------------------------------ exam ------------------------------ */
 const isCode = q => q.type === 'sql' || q.type === 'py';
+/* question texts in the chosen language (Spanish is for understanding only; grading is language-independent) */
+const qt = q => (S.lang === 'es' && q.es)
+  ? { title: q.es.title, prompt: q.es.prompt, section: q.es.section, options: q.es.options || q.options }
+  : { title: q.title, prompt: q.prompt, section: q.section, options: q.options };
+function syncLangBtn() { const b = $('#langBtn'); if (b) b.textContent = S.lang === 'es' ? 'English' : 'Español'; }
+function setLang(l) { S.lang = l; try { localStorage.setItem('gc_lang', l); } catch (e) {} syncLangBtn(); if (S.inExam) { buildNav(); renderQ(); } }
+$('#langBtn').onclick = () => setLang(S.lang === 'es' ? 'en' : 'es');
+syncLangBtn();
 function ansOf(id) { return S.ans[id] || (S.ans[id] = { response: '', output: null, outFor: null }); }
 function isAnswered(q) {
   const a = S.ans[q.id]; if (!a || a.response === '' || a.response == null) return false;
@@ -514,8 +524,9 @@ function startTimer() {
 function buildNav() {
   let html = '', sec = '';
   S.q.forEach((q, i) => {
-    if (q.section !== sec) { sec = q.section; html += '<h4>' + esc(sec) + '</h4>'; }
-    html += '<button class="navbtn" data-i="' + i + '"><span class="dot"></span><span class="n">' + (i + 1) + '</span><span>' + esc(q.title) + '</span></button>';
+    const t = qt(q);
+    if (t.section !== sec) { sec = t.section; html += '<h4>' + esc(sec) + '</h4>'; }
+    html += '<button class="navbtn" data-i="' + i + '"><span class="dot"></span><span class="n">' + (i + 1) + '</span><span>' + esc(t.title) + '</span></button>';
   });
   const nav = $('#nav'); nav.innerHTML = html;
   nav.onclick = e => { const b = e.target.closest('.navbtn'); if (b) { S.i = +b.dataset.i; renderQ(); } };
@@ -533,12 +544,12 @@ function schemaHtml() {
 }
 
 function renderQ() {
-  const q = S.q[S.i], a = ansOf(q.id), main = $('#qmain');
-  $('#barSec').textContent = q.section;
-  let h = '<div class="card"><div class="qhead"><span class="chip">Question ' + (S.i + 1) + ' of ' + S.q.length + '</span><span class="chip">' + q.points + ' pts</span><span class="chip">' + esc(q.section) + '</span></div>' +
-    '<div class="qtitle">' + esc(q.title) + '</div><div class="prompt">' + fmt(q.prompt) + '</div>';
+  const q = S.q[S.i], a = ansOf(q.id), main = $('#qmain'), t = qt(q), es = S.lang === 'es';
+  $('#barSec').textContent = t.section;
+  let h = '<div class="card"><div class="qhead"><span class="chip">' + (es ? 'Pregunta ' + (S.i + 1) + ' de ' : 'Question ' + (S.i + 1) + ' of ') + S.q.length + '</span><span class="chip">' + q.points + ' pts</span><span class="chip">' + esc(t.section) + '</span></div>' +
+    '<div class="qtitle">' + esc(t.title) + '</div><div class="prompt">' + fmt(t.prompt) + '</div>';
   if (q.type === 'mcq') {
-    h += '<div role="radiogroup">' + q.options.map((o, k) =>
+    h += '<div role="radiogroup">' + t.options.map((o, k) =>
       '<label class="opt' + (String(a.response) === String(k) ? ' sel' : '') + '" style="margin:8px 0;font-weight:400;font-size:15px"><input type="radio" name="mcq" value="' + k + '"' + (String(a.response) === String(k) ? ' checked' : '') + '><span class="l">' + String.fromCharCode(65 + k) + '</span><code>' + esc(o) + '</code></label>').join('') + '</div>';
   } else if (q.type === 'num') {
     h += '<label for="numIn">Your answer</label><input id="numIn" type="text" inputmode="decimal" style="max-width:240px" value="' + esc(a.response) + '" autocomplete="off">';
@@ -647,7 +658,7 @@ async function finish(auto) {
     const open = S.q.filter(q => !isAnswered(q));
     const ok = await confirmBox('Finish the assessment?',
       '<p style="margin:0 0 8px">You answered <b>' + (S.q.length - open.length) + ' of ' + S.q.length + '</b> questions.</p>' +
-      (open.length ? '<p style="margin:0 0 8px" class="muted">Not answered yet: ' + open.map(q => esc(q.title)).join(', ') + '.</p>' : '') +
+      (open.length ? '<p style="margin:0 0 8px" class="muted">Not answered yet: ' + open.map(q => esc(qt(q).title)).join(', ') + '.</p>' : '') +
       '<p style="margin:0">After you submit you cannot change anything.</p>', 'Submit assessment');
     if (!ok) return;
   }
