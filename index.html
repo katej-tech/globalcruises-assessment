@@ -66,7 +66,7 @@ video.mirror{transform:scaleX(-1);width:100%;height:100%;object-fit:cover}
 .timer.warn{background:var(--warn-bg);color:var(--warn)} .timer.bad{background:var(--bad-bg);color:var(--bad);animation:pulse 1s infinite}
 @keyframes pulse{50%{opacity:.55}}
 .savest{font-size:12px;color:var(--muted);min-width:90px;text-align:right}
-.exam{display:grid;grid-template-columns:270px 1fr;gap:18px;padding:18px;max-width:1380px;margin:0 auto}
+.exam{display:grid;grid-template-columns:270px 1fr;gap:18px;padding:18px 18px 230px;max-width:1380px;margin:0 auto}   /* bottom space: the camera/calculator never hide the buttons */
 @media (max-width:900px){.exam{grid-template-columns:1fr}}
 .nav{position:sticky;top:78px;align-self:start;max-height:calc(100vh - 96px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
 @media (max-width:900px){.nav{position:static;max-height:none}}
@@ -108,7 +108,7 @@ table.grid th{position:sticky;top:0;background:var(--panel);font-weight:700}
 table.grid td.num{text-align:right} table.grid td.null{color:var(--muted);font-style:italic}
 table.grid td.wrap{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Consolas,monospace}
 .footnav{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
-.cam-tile{position:fixed;right:14px;bottom:14px;width:176px;z-index:30;background:#0b1220;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.35);border:2px solid var(--ok)}
+.cam-tile{position:fixed;right:14px;bottom:14px;width:176px;z-index:30;cursor:grab;touch-action:none;user-select:none;background:#0b1220;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.35);border:2px solid var(--ok)}
 .cam-tile.off{border-color:var(--bad)}
 .cam-tile video{display:block;width:100%;height:132px;object-fit:cover}
 .cam-tile .st{font-size:11px;font-weight:700;text-align:center;padding:3px;color:#fff;background:var(--ok)} .cam-tile.off .st{background:var(--bad)}
@@ -410,7 +410,26 @@ function camState(on) {
   t.classList.toggle('off', !on); $('#camSt').textContent = on ? 'Camera on' : 'Camera OFF — click to retry';
 }
 function onCamLost() { S.camOk = false; camState(false); if (S.inExam) { logEv('camera_lost', ''); toast('Your camera stopped. Click the camera box to turn it back on.'); } }
-$('#camTile').addEventListener('click', async () => { if (!S.camOk && await enableCamera() && S.inExam) logEv('camera_back', ''); });
+$('#camTile').addEventListener('click', async () => {
+  if (S.camDragged) { S.camDragged = false; return; }          // a drag is not a click
+  if (!S.camOk && await enableCamera() && S.inExam) logEv('camera_back', '');
+});
+/* the camera box can be dragged anywhere (it stays visible) so it never covers a button */
+(function dragCam() {
+  const t = $('#camTile'); let sx = 0, sy = 0, ox = 0, oy = 0, down = false, moved = false;
+  t.title = 'Arrastra para mover / Drag to move';
+  t.addEventListener('pointerdown', e => { down = true; moved = false; sx = e.clientX; sy = e.clientY; const r = t.getBoundingClientRect(); ox = r.left; oy = r.top; try { t.setPointerCapture(e.pointerId); } catch (x) {} });
+  t.addEventListener('pointermove', e => {
+    if (!down) return; const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.abs(dx) + Math.abs(dy) < 6) return; moved = true;
+    t.style.left = Math.min(Math.max(0, ox + dx), window.innerWidth - t.offsetWidth) + 'px';
+    t.style.top = Math.min(Math.max(0, oy + dy), window.innerHeight - t.offsetHeight) + 'px';
+    t.style.right = 'auto'; t.style.bottom = 'auto';
+  });
+  const end = () => { if (down && moved) S.camDragged = true; down = false; };
+  t.addEventListener('pointerup', end); t.addEventListener('pointercancel', end);
+  window.addEventListener('resize', () => { if (t.style.left) { const r = t.getBoundingClientRect(); t.style.left = Math.min(r.left, window.innerWidth - t.offsetWidth) + 'px'; t.style.top = Math.min(r.top, window.innerHeight - t.offsetHeight) + 'px'; } });
+})();
 
 /* ------------------------------ integrity log ------------------------------ */
 function logEv(type, detail) { if (!S.token || S.role !== 'candidate') return; api.api_event(S.token, type, detail || '').catch(() => {}); }
