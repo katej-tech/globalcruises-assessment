@@ -119,6 +119,16 @@ table.grid td.wrap{white-space:pre-wrap;word-break:break-word;font-family:ui-mon
 .spin{width:18px;height:18px;border:3px solid var(--line);border-top-color:var(--brand-2);border-radius:50%;display:inline-block;animation:sp .8s linear infinite;vertical-align:-4px}
 @keyframes sp{to{transform:rotate(360deg)}}
 
+/* ---------- built-in calculator ---------- */
+.calc{position:fixed;right:14px;bottom:186px;width:236px;z-index:31;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.3);padding:10px}
+.calc .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.calc input{font:15px ui-monospace,Consolas,monospace;padding:7px 9px}
+.calc .cres{font:700 22px ui-monospace,Consolas,monospace;text-align:right;padding:6px 4px;min-height:36px;overflow-x:auto;white-space:nowrap}
+.calc .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:6px 0 8px}
+.calc .keys button{padding:8px 0;font-weight:700;font-size:15px;border-radius:7px}
+.calc .keys .op{background:var(--soft)}
+@media (max-width:900px){.calc{bottom:auto;top:70px}}
+
 /* ---------- admin ---------- */
 .admin{max-width:1180px;margin:0 auto;padding:18px}
 .tabs{display:flex;gap:6px;margin:16px 0}
@@ -170,7 +180,8 @@ table.list th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color
   <header class="bar">
     <span class="title">⚓ Analyst assessment</span>
     <span class="grow muted" id="barSec" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-    <button class="btn sm" id="langBtn" title="Cambiar el idioma de las preguntas / Switch the language of the questions">Español</button>
+    <button class="btn sm" id="calcBtn" title="Calculadora / Calculator">🧮 Calculator</button>
+    <button class="btn sm" id="langBtn"title="Cambiar el idioma de las preguntas / Switch the language of the questions">Español</button>
     <span class="savest" id="saveSt"></span>
     <span class="timer" id="timer" role="timer" aria-label="Time remaining">--:--</span>
     <button class="btn primary" id="finishBtn">Finish</button>
@@ -178,6 +189,13 @@ table.list th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color
   <div class="exam">
     <nav class="nav" id="nav" aria-label="Questions"></nav>
     <main id="qmain"></main>
+  </div>
+  <div class="calc hidden" id="calc" role="dialog" aria-label="Calculator">
+    <div class="ch"><b>🧮 Calculator</b><button class="btn sm" id="calcX" aria-label="Close calculator">✕</button></div>
+    <input id="calcIn" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="1260000 / (1800 * 7)">
+    <div class="cres" id="calcRes" aria-live="polite">0</div>
+    <div class="keys" id="calcKeys"></div>
+    <button class="btn sm primary" id="calcUse" style="width:100%">Use result as my answer</button>
   </div>
   <div class="cam-tile" id="camTile"><video id="camExam" class="mirror" autoplay muted playsinline></video><div class="st" id="camSt">Camera on</div></div>
 </section>
@@ -482,6 +500,38 @@ function syncLangBtn() { const b = $('#langBtn'); if (b) b.textContent = S.lang 
 function setLang(l) { S.lang = l; try { localStorage.setItem('gc_lang', l); } catch (e) {} syncLangBtn(); if (S.inExam) { buildNav(); renderQ(); } }
 $('#langBtn').onclick = () => setLang(S.lang === 'es' ? 'en' : 'es');
 syncLangBtn();
+
+/* built-in calculator: candidates can calculate without leaving the page (leaving it is logged as an incident) */
+function calcEval(src) {
+  let e = String(src || '').replace(/,/g, '').replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').trim();
+  if (!e) return null;
+  e = e.replace(/(\d+(?:\.\d+)?|\))\s*%/g, '($1/100)');
+  if (!/^[0-9+\-*/().\s]+$/.test(e)) return null;
+  try { const r = Function('"use strict";return (' + e + ')')(); return typeof r === 'number' && isFinite(r) ? Number(r.toFixed(8)) : null; } catch (err) { return null; }
+}
+(function initCalc() {
+  const inp = $('#calcIn'), res = $('#calcRes'), keys = $('#calcKeys');
+  const layout = ['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', '0', '.', '(', ')', '+', '%', 'C', '⌫'];
+  keys.innerHTML = layout.map(k => '<button class="btn' + (/[\/*\-+%]/.test(k) ? ' op' : '') + '" data-k="' + k + '">' + ({ '/': '÷', '*': '×', '-': '−' }[k] || k) + '</button>').join('') + '<button class="btn primary" data-k="=" style="grid-column:1/-1">=</button>';
+  const upd = () => { const v = calcEval(inp.value); res.textContent = v === null ? (inp.value.trim() ? '…' : '0') : String(v); };
+  keys.onclick = e => {
+    const b = e.target.closest('[data-k]'); if (!b) return; const k = b.dataset.k;
+    if (k === 'C') inp.value = ''; else if (k === '⌫') inp.value = inp.value.slice(0, -1);
+    else if (k === '=') { const v = calcEval(inp.value); if (v !== null) inp.value = String(v); }
+    else inp.value += k;
+    upd(); inp.focus();
+  };
+  inp.oninput = upd;
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const v = calcEval(inp.value); if (v !== null) { inp.value = String(v); upd(); } } };
+  $('#calcBtn').onclick = () => { const c = $('#calc'); c.classList.toggle('hidden'); if (!c.classList.contains('hidden')) inp.focus(); };
+  $('#calcX').onclick = () => $('#calc').classList.add('hidden');
+  $('#calcUse').onclick = () => {
+    const q = S.q[S.i], v = calcEval(inp.value);
+    if (!q || q.type !== 'num') { toast(S.lang === 'es' ? 'Esta pregunta no pide un número.' : 'This question does not ask for a number.'); return; }
+    if (v === null) { toast(S.lang === 'es' ? 'Escribe una operación válida.' : 'Enter a valid calculation.'); return; }
+    const box = $('#numIn'); if (box) box.value = String(v); setAns(q, String(v)); toast(S.lang === 'es' ? 'Respuesta guardada: ' + v : 'Answer saved: ' + v);
+  };
+})();
 function ansOf(id) { return S.ans[id] || (S.ans[id] = { response: '', output: null, outFor: null }); }
 function isAnswered(q) {
   const a = S.ans[q.id]; if (!a || a.response === '' || a.response == null) return false;
@@ -552,7 +602,7 @@ function renderQ() {
     h += '<div role="radiogroup">' + t.options.map((o, k) =>
       '<label class="opt' + (String(a.response) === String(k) ? ' sel' : '') + '" style="margin:8px 0;font-weight:400;font-size:15px"><input type="radio" name="mcq" value="' + k + '"' + (String(a.response) === String(k) ? ' checked' : '') + '><span class="l">' + String.fromCharCode(65 + k) + '</span><code>' + esc(o) + '</code></label>').join('') + '</div>';
   } else if (q.type === 'num') {
-    h += '<label for="numIn">Your answer</label><input id="numIn" type="text" inputmode="decimal" style="max-width:240px" value="' + esc(a.response) + '" autocomplete="off">';
+    h += '<label for="numIn">Your answer</label><input id="numIn" type="text" inputmode="decimal" style="max-width:240px" value="' + esc(a.response) + '" autocomplete="off"><div class="hint" style="margin-top:6px">' + (es ? 'Usa la calculadora 🧮 de la barra superior (no abras la del sistema: salir de la página queda registrado).' : 'Use the 🧮 Calculator in the top bar (do not open the system one: leaving the page is logged).') + '</div>';
   } else if (q.type === 'text') {
     h += '<label for="essay">Your recommendation</label><textarea id="essay" class="essay" spellcheck="true" placeholder="Write in English…">' + esc(a.response) + '</textarea><div class="hint" id="wc"></div>';
   } else {
